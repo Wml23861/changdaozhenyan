@@ -113,6 +113,22 @@ foreach ($p in $contentParas) {
 }
 if ($paraIssue -eq 0) { Ok "所有段落开头句均带逗号" }
 
+# ---------- 7.5 规范7: 段落长度适配手机阅读 ----------
+# 叙事段目标<=80字, 对话/讲经/经文段目标<=100字, 任何段落不得>150字
+$longParaWarn = 0
+$longParaFail = 0
+foreach ($p in $contentParas) {
+    $plen = ($p -replace '\s', '').Length
+    if ($plen -gt 150) {
+        Fail "段落超长($plen 字 > 150), 手机端整屏文字墙, 必须拆段: $($p.Substring(0, [Math]::Min(20, $p.Length)))..."
+        $longParaFail++
+    } elseif ($plen -gt 100) {
+        Warn "段落偏长($plen 字 > 100), 建议拆段: $($p.Substring(0, [Math]::Min(20, $p.Length)))..."
+        $longParaWarn++
+    }
+}
+if ($longParaWarn -eq 0 -and $longParaFail -eq 0) { Ok "段落长度适配手机阅读(全部 <= 100 字)" }
+
 # ---------- 8. 规范1/3: 句号收尾的句子成分检查 ----------
 # 按句号/问号/叹号切句
 $sentences = @()
