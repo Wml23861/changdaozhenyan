@@ -67,11 +67,7 @@ if ($nonEmpty.Count -eq 0) {
     exit 1
 }
 
-if ($nonEmpty[$nonEmpty.Count - 1].Trim() -eq '（本章完）') {
-    Ok "章尾以（本章完）收尾"
-} else {
-    Fail "章尾最后一行必须是 （本章完）, 实际: $($nonEmpty[$nonEmpty.Count-1].Trim())"
-}
+# 注: 自 9f7e981 起全书不再使用"（本章完）"章尾标记, 不再强制检查
 
 # 内容正文(去掉章尾标记)
 $contentParas = @($nonEmpty | Where-Object { $_.Trim() -ne '（本章完）' } | ForEach-Object { $_.Trim() })
@@ -102,16 +98,22 @@ foreach ($p in $contentParas) {
 }
 if ($ErrorCount -eq 0) { Ok "无禁用标点与 Markdown 符号" }
 
-# ---------- 7. 规范2: 每段开头句必须有逗号, 段内第一个标点不能是句号 ----------
+# ---------- 7. 规范2: 单句短段只作节奏顿点单发, 不得连续两段连用 ----------
+$soloRun = 0
 $paraIssue = 0
 foreach ($p in $contentParas) {
     $m = [regex]::Match($p, '[，。？！：；、""''《》（）]')
     if ($m.Success -and $m.Value -eq '。') {
-        Fail "段落开头句以句号收尾(开头句必须有逗号): $($p.Substring(0, [Math]::Min(25, $p.Length)))..."
-        $paraIssue++
+        $soloRun++
+        if ($soloRun -ge 2) {
+            Fail "单句短段连续连用(开头句必须有逗号, 短段不得连用): $($p.Substring(0, [Math]::Min(25, $p.Length)))..."
+            $paraIssue++
+        }
+    } else {
+        $soloRun = 0
     }
 }
-if ($paraIssue -eq 0) { Ok "所有段落开头句均带逗号" }
+if ($paraIssue -eq 0) { Ok "单句短段无连续连用, 节奏顿点合规" }
 
 # ---------- 7.5 规范7: 段落长度适配手机阅读 ----------
 # 叙事段目标<=80字, 对话/讲经/经文段目标<=100字, 任何段落不得>150字
@@ -128,6 +130,31 @@ foreach ($p in $contentParas) {
     }
 }
 if ($longParaWarn -eq 0 -and $longParaFail -eq 0) { Ok "段落长度适配手机阅读(全部 <= 100 字)" }
+
+# ---------- 7.6 规范8: 段尾必须以句号/问号收束, 禁止逗号悬空 ----------
+$paraEndFail = 0
+foreach ($p in $contentParas) {
+    $pt = $p.TrimEnd()
+    # 去掉段尾闭口引号后, 看最后一个字符是否为非句末标点
+    $core = $pt -replace '[”"]+$', ''
+    if ($core -match '[，、；,;]$') {
+        $tail = $core.Substring([Math]::Max(0, $core.Length - 20))
+        Fail "段尾以逗号/顿号悬空收尾(必须以句号或问号收束): ...$tail"
+        $paraEndFail++
+    }
+}
+if ($paraEndFail -eq 0) { Ok "所有段落均以句号/问号/冒号收束, 无逗号悬空" }
+
+# ---------- 7.7 规范8: 句末标点密度(防一逗到底) ----------
+$endMarkCnt = [regex]::Matches($content, '[。？！]').Count
+$commaTotal = [regex]::Matches($content, '，').Count
+if ($commaTotal -gt 0) {
+    if ($endMarkCnt * 12 -ge $commaTotal) {
+        Ok "句末标点密度达标(句末 $endMarkCnt : 逗号 $commaTotal, 不低于 1:12)"
+    } else {
+        Warn "句末标点密度过低(句末 $endMarkCnt : 逗号 $commaTotal, 低于 1:12), 疑似一逗到底, 需人工评估"
+    }
+}
 
 # ---------- 8. 规范1/3: 句号收尾的句子成分检查 ----------
 # 按句号/问号/叹号切句
@@ -180,14 +207,58 @@ $aiCliches = @(
     '感慨万千', '思绪万千', '陷入沉思', '意味深长', '若有所思', '露出笑容'
 )
 $clicheHits = 0
+
+# 经文引文豁免: 引号内照录《资料/原文对照.md》原文的词不计入(经文须逐字照引, 不可改写)
+# 注意: 本段全部用字符编码构造, 不写中文引号/标点字面量, 避免脚本编码差异导致正则失配
+function ConvertTo-FlatText($s) { return ($s -replace '[^0-9A-Za-z一-鿿]', '') }
+
+$canonFlat = ''
+$bookDir  = Split-Path (Split-Path (Split-Path $Path -Parent) -Parent) -Parent
+$canonPath = Join-Path $bookDir '资料\原文对照.md'
+if (Test-Path $canonPath) {
+    $canonRaw  = [System.IO.File]::ReadAllText($canonPath, [System.Text.Encoding]::UTF8)
+    $canonFlat = ConvertTo-FlatText $canonRaw
+}
+$script:canonFlatRef = $canonFlat
+
+$lq = [char]0x201C; $rq = [char]0x201D
+$spanPattern = "$lq[^$rq]*$rq"
+$quoteSpans = New-Object System.Collections.ArrayList
+foreach ($m in [regex]::Matches($content, $spanPattern)) {
+    # 注意: PowerShell 逗号优先级高于加法, 求和必须加括号
+    [void]$quoteSpans.Add(@($m.Index, ($m.Index + $m.Length)))
+}
+$script:quoteSpansRef = $quoteSpans
+
+function Test-ScriptureQuote($idx, $len) {
+    if ($script:canonFlatRef -eq '') { return $false }
+    foreach ($sp in $script:quoteSpansRef) {
+        if ($idx -ge $sp[0] -and ($idx + $len) -le $sp[1]) {
+            $quoteText = $content.Substring($sp[0], $sp[1] - $sp[0])
+            $qFlat = ConvertTo-FlatText $quoteText
+            if ($qFlat.Length -ge 6 -and $script:canonFlatRef.Contains($qFlat)) { return $true }
+            $pos    = $idx - $sp[0]
+            $wStart = [Math]::Max(0, $pos - 12)
+            $wLen   = [Math]::Min($quoteText.Length - $wStart, $len + 24)
+            $winFlat = ConvertTo-FlatText ($quoteText.Substring($wStart, $wLen))
+            if ($winFlat.Length -ge 8 -and $script:canonFlatRef.Contains($winFlat)) { return $true }
+            return $false
+        }
+    }
+    return $false
+}
+
 foreach ($w in $aiCliches) {
-    $cnt = [regex]::Matches($content, [regex]::Escape($w)).Count
+    $cnt = 0
+    foreach ($m in [regex]::Matches($content, [regex]::Escape($w))) {
+        if (-not (Test-ScriptureQuote $m.Index $m.Length)) { $cnt++ }
+    }
     if ($cnt -gt 0) {
         $clicheHits += $cnt
         Warn "AI腔/套路词汇 '$w' 出现 $cnt 次"
     }
 }
-if ($clicheHits -eq 0) { Ok "未检出AI腔套路词汇" }
+if ($clicheHits -eq 0) { Ok "未检出AI腔套路词汇(经文引文已豁免)" }
 
 # ---------- 11. 人工特性: 段落开头重复率 ----------
 $starters = @{}
