@@ -81,6 +81,20 @@ if ($charCount -ge 2500) {
     Fail "字数不足: $charCount 字 < 2500 字"
 }
 
+# ---------- 5.5 开场铁律: 正文第一段禁日历报时 ----------
+# 规则出处: references/style-rules.md 一、排版硬规范第9条(2026-10-15三轮返修后定稿)
+# 开场段禁止出现日历月份报时(正月/二月/.../冬月/腊月/"X月过了一半/末了"等), 时间靠物候自报
+# "个月"为时长用法, 豁免
+if ($contentParas.Count -gt 0) {
+    $opening = $contentParas[0]
+    $mCal = [regex]::Match($opening, '(?<!个)([正腊冬一两二三四五六七八九]月|十[一二]?月)')
+    if ($mCal.Success) {
+        Fail "开场段出现日历报时 '$($mCal.Value)'(开场铁律: 禁月份报时, 时间靠物候自报): $($opening.Substring(0, [Math]::Min(30, $opening.Length)))..."
+    } else {
+        Ok "开场段无日历报时(开场铁律)"
+    }
+}
+
 # ---------- 6. 禁用标点: 破折号、省略号及各类特殊符号 ----------
 $forbiddenMap = [ordered]@{
     '——' = '破折号(双)'; '—' = '破折号'; '–' = '连接号'; '―' = '横线号';
