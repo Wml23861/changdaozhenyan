@@ -50,7 +50,7 @@ description: 《唱道真言》白话爽文版（番茄小说《四十岁那年�
 
 ### 第3步 创作正文
 
-按设计卡写正文，遵守 `references/style-rules.md` 第一至五节全部规范：排版硬规范六条、文件格式、文体指纹、改编红线、事实表。写完先自查字数（不含标题须 ≥2500 字），不足当场补足。
+按设计卡写正文，遵守 `references/style-rules.md` 第一至三部分全部规范：创作心法 63 条、文体指纹、章节配比、改编红线、事实表、排版硬规范九条、文件格式。写完先自查字数（不含标题须 ≥2500 字），不足当场补足。
 
 ### 第4步 机器校验
 
@@ -65,7 +65,7 @@ powershell -NoProfile -File ".claude/skills/changdao-writer/scripts/check-chapte
 
 ### 第5步 三层审查
 
-按 `references/style-rules.md` 第六节执行：
+按 `references/style-rules.md` 第四部分执行：
 
 1. **机器层**：第4步结果（必须 0 错误）。
 2. **规则层**：逐项核对清单，包括与《原文对照.md》所引原文逐句比对，确认教义不漏、不增、不曲解。
